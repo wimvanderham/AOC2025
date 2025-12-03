@@ -20,30 +20,31 @@ BLOCK-LEVEL ON ERROR UNDO, THROW.
 DEFINE VARIABLE cURL       AS CHARACTER NO-UNDO INITIAL "https://adventofcode.com/&1/day/&2".
 DEFINE VARIABLE cCommand   AS CHARACTER NO-UNDO.
 /* Variables for input handling */
-DEFINE VARIABLE lDownload  AS LOGICAL   NO-UNDO.
-DEFINE VARIABLE cSession   AS CHARACTER NO-UNDO INITIAL "53616c7465645f5f0aa2b48889c4ecb0a71e7086a3ce378be60c9c62fff2ce2f0a803b3cf401a90e48d12df95cfd2383f2923a50c7378e392a1b5d4ce4438c7e".
-DEFINE VARIABLE iYear      AS INTEGER   NO-UNDO INITIAL 2025.
-DEFINE VARIABLE iDay       AS INTEGER   NO-UNDO INITIAL 1.
-DEFINE VARIABLE hPLIP      AS HANDLE    NO-UNDO.
-DEFINE VARIABLE cInputFile AS CHARACTER NO-UNDO.
-DEFINE VARIABLE lcInput    AS LONGCHAR  NO-UNDO.
-DEFINE VARIABLE iLine      AS INTEGER   NO-UNDO.
-DEFINE VARIABLE cLine      AS CHARACTER NO-UNDO.
-DEFINE VARIABLE iChar      AS INTEGER   NO-UNDO.
-DEFINE VARIABLE lOpenURL   AS LOGICAL   NO-UNDO INITIAL YES.
-DEFINE VARIABLE lPart      AS LOGICAL   NO-UNDO EXTENT 2.
+DEFINE VARIABLE lDownload   AS LOGICAL   NO-UNDO.
+DEFINE VARIABLE cSession    AS CHARACTER NO-UNDO INITIAL "53616c7465645f5f0aa2b48889c4ecb0a71e7086a3ce378be60c9c62fff2ce2f0a803b3cf401a90e48d12df95cfd2383f2923a50c7378e392a1b5d4ce4438c7e".
+DEFINE VARIABLE iYear       AS INTEGER   NO-UNDO INITIAL 2025.
+DEFINE VARIABLE iDay        AS INTEGER   NO-UNDO INITIAL 1.
+DEFINE VARIABLE hPLIP       AS HANDLE    NO-UNDO.
+DEFINE VARIABLE cInputFile  AS CHARACTER NO-UNDO.
+DEFINE VARIABLE cOutputFile AS CHARACTER NO-UNDO.
+DEFINE VARIABLE lcInput     AS LONGCHAR  NO-UNDO.
+DEFINE VARIABLE iLine       AS INTEGER   NO-UNDO.
+DEFINE VARIABLE cLine       AS CHARACTER NO-UNDO.
+DEFINE VARIABLE iChar       AS INTEGER   NO-UNDO.
+DEFINE VARIABLE lOpenURL    AS LOGICAL   NO-UNDO INITIAL YES.
+DEFINE VARIABLE lPart       AS LOGICAL   NO-UNDO EXTENT 2.
 /* Variables for solving */
 /* Generic */
-DEFINE VARIABLE iSolution  AS INT64     NO-UNDO.
-DEFINE VARIABLE lOk        AS LOGICAL   NO-UNDO.
-DEFINE VARIABLE cMessage   AS CHARACTER NO-UNDO.
-DEFINE VARIABLE lvlDebug   AS LOGICAL   NO-UNDO INITIAL FALSE.
-DEFINE VARIABLE lvlShow    AS LOGICAL   NO-UNDO INITIAL FALSE.
-DEFINE VARIABLE iPart      AS INTEGER   NO-UNDO.
+DEFINE VARIABLE iSolution   AS INT64     NO-UNDO.
+DEFINE VARIABLE lOk         AS LOGICAL   NO-UNDO.
+DEFINE VARIABLE cMessage    AS CHARACTER NO-UNDO.
+DEFINE VARIABLE lvlDebug    AS LOGICAL   NO-UNDO INITIAL FALSE.
+DEFINE VARIABLE lvlShow     AS LOGICAL   NO-UNDO INITIAL FALSE.
+DEFINE VARIABLE iPart       AS INTEGER   NO-UNDO.
 /* Specific */
 DEFINE TEMP-TABLE ttLine
-   FIELD IDLine       AS INTEGER 
-   FIELD cInputLine   AS CHARACTER FORMAT "X(10)"
+   FIELD IDLine         AS INTEGER 
+   FIELD cInputLine     AS CHARACTER FORMAT "X(10)"
    /* Extra fields to keep track of the dial */
    FIELD cDirection     AS CHARACTER FORMAT "X"
    FIELD iMoveValue     AS INTEGER 
@@ -56,6 +57,8 @@ DEFINE TEMP-TABLE ttLine
 DEFINE VARIABLE iPosition  AS INTEGER   NO-UNDO.
 DEFINE VARIABLE cDirection AS CHARACTER NO-UNDO.
 DEFINE VARIABLE iValue     AS INTEGER   NO-UNDO.
+DEFINE VARIABLE iLoop1     AS INTEGER   NO-UNDO.
+DEFINE VARIABLE iLoop2     AS INTEGER   NO-UNDO.
    
 /* ********************  Preprocessor Definitions  ******************** */
 
@@ -129,6 +132,7 @@ COPY-LOB FROM FILE cInputfile TO OBJECT lcInput.
 IF lvlDebug THEN 
 DO:
    lcInput = REPLACE ("L68,L30,R48,L5,R60,L55,L1,L99,R14,L82", ",", "~n").
+   lcInput = "R1000".
 END.
 /* Read Input into Temp-table */
 ReadBlock:
@@ -214,6 +218,129 @@ DO:
       iSolution) SKIP (1)
       SUBSTITUTE ("Found solution in &1 msecs.", ETIME)
       VIEW-AS ALERT-BOX TITLE " 2025 - Day 01 - Part One".
+END. /* Process Part One */
+
+IF lPart[2] THEN 
+DO:
+   /* Process Part Two */
+   IF lPart[1] THEN DO:
+      /* Reset counters */
+      iSolution = 0.
+      
+      FOR EACH ttLine:
+         ASSIGN 
+            ttLine.cDirection     = ""
+            tTLine.iStartPosition = 0
+            ttLine.iCalculation   = 0
+            ttLine.iMoveValue     = 0
+            ttLine.iEndPosition   = 0
+            ttLine.iZeroCounter   = 0
+         .
+      END.
+   END. /* Reset counters */
+   
+   FILE-INFO:FILE-NAME = "output".
+
+   cOutputFile = SUBSTITUTE ("&1\&2",
+                             FILE-INFO:FULL-PATHNAME,
+                             "01.out").
+   
+   OUTPUT TO VALUE (cOutputFile).
+   
+   iPosition = 50.
+   FOR EACH ttLine:
+      IF ttLine.IDLine EQ 66 THEN 
+         MESSAGE ttLine.IDLine
+         VIEW-AS ALERT-BOX.
+      ASSIGN 
+         ttLine.iStartPosition = iPosition
+      . 
+      ASSIGN 
+         cDirection = SUBSTRING (ttLine.cInputLine, 1, 1)
+         iValue     = INTEGER (SUBSTRING (ttLine.cInputLine, 2))
+      .
+      ASSIGN 
+         ttLine.cDirection = cDirection
+         ttLine.iMoveValue = iValue
+      .
+      CASE cDirection:
+         WHEN "L" THEN DO:
+            IF iPosition EQ 0 THEN 
+               iPosition = 100.
+            ttLine.iStartPosition = iPosition.
+            iPosition -= iValue.
+         END.
+         WHEN "R" THEN DO:
+            IF iPosition EQ 100 THEN 
+               iPosition = 0.
+            ttLine.iStartPosition = iPosition.
+            iPosition += iValue.
+         END.
+         OTHERWISE
+            UNDO, THROW NEW Progress.Lang.AppError(SUBSTITUTE ("Unknown direction '&1'.", cDirection), 99).
+      END CASE.
+      
+      ASSIGN 
+         ttLine.iCalculation   = iPosition
+      .
+      
+      ASSIGN 
+         iLoop1 = 0
+         iLoop2 = 0
+      .
+      
+      IF iPosition LT 0 THEN DO:
+         
+         DO WHILE iPosition LT 0:
+            iLoop1              += 1.
+            iPosition           += 100.
+            ttLine.iZeroCounter += 1. 
+         END.
+      END.
+          
+      IF iPosition GT 100 THEN DO:
+         DO WHILE iPosition GT 100:
+            iLoop2              += 1.
+            iPosition           -= 100.
+            ttLine.iZeroCounter += 1.
+         END.
+      END.
+                     
+      ASSIGN 
+         ttLine.iEndPosition = iPosition
+      . 
+
+      IF ttLine.iEndPosition EQ 0 
+      OR ttLine.iEndPosition EQ 100 THEN 
+         ttLine.iZeroCounter += 1.
+                  
+      iSolution = iSolution + ttLine.iZeroCounter.
+
+      DISPLAY
+      ttLine.iStartPosition           LABEL "iStart"
+      ttLine.cInputLine FORMAT "X(8)" LABEL "cEntry"
+      ttLine.iMoveValue               LABEL "iRotate"
+      ttLine.iEndPosition             LABEL "iDial"
+      ttLine.iZeroCounter             LABEL "iLineZero"
+      iSolution                       LABEL "iZero"
+      WITH WIDTH 132 STREAM-IO.            
+   END.
+   OUTPUT CLOSE.
+      
+   IF lvlShow THEN 
+   DO:
+      RUN sy\win\wbrowsett.w
+         (INPUT TEMP-TABLE ttLine:HANDLE).
+   END.
+      
+   OUTPUT TO "clipboard".
+   PUT UNFORMATTED iSolution SKIP.
+   OUTPUT CLOSE.
+   MESSAGE 
+      SUBSTITUTE ("Solution: &1.", 
+      iSolution) SKIP (1)
+      SUBSTITUTE ("Found solution in &1 msecs.", ETIME)
+      VIEW-AS ALERT-BOX TITLE " 2025 - Day 01 - Part Two".
 END. /* Process Part One */
 
 
