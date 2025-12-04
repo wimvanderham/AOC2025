@@ -249,9 +249,6 @@ DO:
    
    iPosition = 50.
    FOR EACH ttLine:
-      IF ttLine.IDLine EQ 66 THEN 
-         MESSAGE ttLine.IDLine
-         VIEW-AS ALERT-BOX.
       ASSIGN 
          ttLine.iStartPosition = iPosition
       . 
@@ -317,10 +314,10 @@ DO:
       iSolution = iSolution + ttLine.iZeroCounter.
 
       DISPLAY
-      ttLine.iStartPosition           LABEL "iStart"
+      ttLine.iStartPosition MOD 100   LABEL "iStart"
       ttLine.cInputLine FORMAT "X(8)" LABEL "cEntry"
       ttLine.iMoveValue               LABEL "iRotate"
-      ttLine.iEndPosition             LABEL "iDial"
+      ttLine.iEndPosition   MOD 100   LABEL "iDial"
       ttLine.iZeroCounter             LABEL "iLineZero"
       iSolution                       LABEL "iZero"
       WITH WIDTH 132 STREAM-IO.            
