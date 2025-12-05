@@ -63,6 +63,9 @@ DEFINE VARIABLE cNumber AS CHARACTER NO-UNDO.
 FUNCTION withDouble RETURNS LOGICAL 
    (INPUT ipcID AS CHARACTER) FORWARD.
 
+FUNCTION withMultiples RETURNS LOGICAL 
+   (INPUT ipcID AS CHARACTER) FORWARD.
+
 {AOC_session.i}
 
 DISPLAY
@@ -132,7 +135,7 @@ ETIME (YES).
 COPY-LOB FROM FILE cInputfile TO OBJECT lcInput.
 IF lvlDebug THEN 
 DO:
-   lcInput = "".
+   lcInput = "11-22,95-115,998-1012,1188511880-1188511890,222220-222224,1698522-1698528,446443-446449,38593856-38593862,565653-565659,824824821-824824827,2121212118-2121212124".
 END.
 
 /* Read Input into Temp-table */
@@ -198,28 +201,47 @@ END. /* Process Part One */
 IF lPart[2] THEN 
 DO:
    /* Process Part Two */
-   IF lPart[1] THEN DO:
-
-   END. /* Reset Part 1 */
+   iSolution = 0.
    
-   FILE-INFO:FILE-NAME = "output".
-
-   cOutputFile = SUBSTITUTE ("&1\&2",
-                             FILE-INFO:FULL-PATHNAME,
-                             "02.out").
-   
-   OUTPUT TO VALUE (cOutputFile).
-   
-   FOR EACH ttLine:
-
-   END.
-   OUTPUT CLOSE.
-      
    IF lvlShow THEN 
    DO:
       RUN sy\win\wbrowsett.w
          (INPUT TEMP-TABLE ttLine:HANDLE).
    END.
+
+   FIND FIRST ttLine.
+   
+   FILE-INFO:FILE-NAME = "output".
+
+   cOutputFile = SUBSTITUTE ("&1\&2.out",
+                             FILE-INFO:FULL-PATHNAME,
+                             STRING (iDay, "99")).
+                             
+   OUTPUT TO VALUE (cOutputFile) UNBUFFERED.
+   
+   DO iRange = 1 TO NUM-ENTRIES (ttLine.cInputLine):
+      cRange = ENTRY (iRange, ttLine.cInputLine).
+      ASSIGN 
+         iStart = INT64 (ENTRY (1, cRange, "-"))
+         iEnd   = INT64 (ENTRY (2, cRange, "-"))
+      .
+      
+      DO iNumber = iStart TO iEnd:
+         cNumber = STRING (iNumber).
+         IF withMultiples(cNumber) EQ TRUE THEN DO:
+            PUT UNFORMATTED 
+            SUBSTITUTE ("&1: &2", cRange, cNumber) SKIP.
+            IF lvlDebug THEN 
+               MESSAGE SUBSTITUTE ("Found invalid ID in range: '&1': &2.",
+               cRange,
+               iNumber)
+               VIEW-AS ALERT-BOX.
+            iSolution += iNumber.
+         END.
+      END.
+   END.
+   OUTPUT CLOSE.
+    
       
    OUTPUT TO "clipboard".
    PUT UNFORMATTED iSolution SKIP.
@@ -276,4 +298,51 @@ DEFINE VARIABLE cSub  AS CHARACTER NO-UNDO EXTENT 2.
    
    RETURN cSub[1] EQ cSub[2].
 
+END FUNCTION.
+
+FUNCTION withMultiples RETURNS LOGICAL 
+(INPUT ipcID AS CHARACTER):
+/*------------------------------------------------------------------------------
+ Purpose: Returns TRUE:
+          if it is made only of some sequence of digits repeated at least twice.
+ Notes:
+------------------------------------------------------------------------------*/   
+DEFINE VARIABLE iHalf     AS INTEGER   NO-UNDO.
+DEFINE VARIABLE iLength   AS INTEGER   NO-UNDO.
+DEFINE VARIABLE cSub      AS CHARACTER NO-UNDO EXTENT 2.
+DEFINE VARIABLE lMultiple AS LOGICAL   NO-UNDO.
+DEFINE VARIABLE iNext     AS INTEGER   NO-UNDO.
+DEFINE VARIABLE lAllEqual AS LOGICAL   NO-UNDO.
+
+   iHalf = INTEGER (TRUNCATE (LENGTH (ipcID) / 2, 0)).
+   
+   IF iHalf GE 1 THEN          
+   SubBlock:
+   DO iLength = 1 TO iHalf:
+      cSub[1] = SUBSTRING (ipcID, 1, iLength).
+      IF LENGTH(ipcID) MOD iLength NE 0 THEN DO:
+         /* Length is not a multiple of sub length, skip */
+         NEXT SubBlock.
+      END.
+
+      iNext = iLength + 1.
+      lAllEqual = TRUE.         
+      CheckBlock:
+      DO WHILE iNext LE (LENGTH(ipcID) - iLength + 1):
+         cSub[2] = SUBSTRING (ipcID, iNext, iLength).
+         IF cSub[1] NE cSub[2] THEN DO:
+            lAllEqual = FALSE.
+            LEAVE CheckBlock.
+         END.
+         iNext += iLength.
+      END.
+
+      IF lAllEqual THEN DO:
+         lMultiple = TRUE.
+         LEAVE SubBlock.           
+      END.
+   END.
+    
+   RETURN lMultiple.
+      
 END FUNCTION.
