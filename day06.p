@@ -31,9 +31,11 @@ DEFINE VARIABLE lcInput     AS LONGCHAR  NO-UNDO.
 DEFINE VARIABLE iLine       AS INTEGER   NO-UNDO.
 DEFINE VARIABLE cLine       AS CHARACTER NO-UNDO.
 DEFINE VARIABLE iChar       AS INTEGER   NO-UNDO.
+DEFINE VARIABLE cChar       AS CHARACTER NO-UNDO.
 DEFINE VARIABLE lOpenURL    AS LOGICAL   NO-UNDO INITIAL YES.
 DEFINE VARIABLE lPart       AS LOGICAL   NO-UNDO EXTENT 2.
 DEFINE VARIABLE iMaxLine    AS INTEGER   NO-UNDO.
+DEFINE VARIABLE iMaxLength  AS INTEGER   NO-UNDO.
 
 /* Variables for solving */
 /* Generic */
@@ -42,6 +44,7 @@ DEFINE VARIABLE lOk         AS LOGICAL   NO-UNDO.
 DEFINE VARIABLE cMessage    AS CHARACTER NO-UNDO.
 DEFINE VARIABLE lvlDebug    AS LOGICAL   NO-UNDO INITIAL FALSE.
 DEFINE VARIABLE lvlShow     AS LOGICAL   NO-UNDO INITIAL FALSE.
+DEFINE VARIABLE lvlOutput   AS LOGICAL   NO-UNDO INITIAL FALSE.
 DEFINE VARIABLE iPart       AS INTEGER   NO-UNDO.
 /* Specific */
 DEFINE TEMP-TABLE ttLine
@@ -55,6 +58,10 @@ DEFINE TEMP-TABLE ttProblem
    FIELD iColumn    AS INTEGER 
    FIELD cOperation AS CHARACTER 
    FIELD iResult    AS INT64 
+   
+   /* Extra fields for Part Two */
+   FIELD iStartPos AS INTEGER /* Left  most position of this problem (column) */
+   FIELD iEndPos   AS INTEGER /* Right most position of this problem (column) */
 INDEX indColumn IS UNIQUE iColumn.
 
 DEFINE TEMP-TABLE ttTerm
@@ -63,9 +70,28 @@ DEFINE TEMP-TABLE ttTerm
    FIELD iValue  AS INT64 
 INDEX indTerm IS UNIQUE iColumn iRow.
 
-DEFINE VARIABLE iColumn  AS INTEGER NO-UNDO.
-DEFINE VARIABLE iRow     AS INTEGER NO-UNDO.
-DEFINE VARIABLE cValue   AS CHARACTER NO-UNDO.
+DEFINE TEMP-TABLE ttTermColumn
+   FIELD iColumn   AS INTEGER 
+   FIELD iRow      AS INTEGER 
+   FIELD iPosition AS INTEGER 
+   FIELD cValue    AS CHARACTER 
+INDEX indTermPos IS UNIQUE iPosition iColumn iRow.
+
+DEFINE TEMP-TABLE ttTermByColumn
+   FIELD iColumn   AS INTEGER 
+   FIELD iRow      AS INTEGER 
+   FIELD iPosition AS INTEGER 
+   FIELD cValue    AS CHARACTER 
+   FIELD iValue    AS INT64 
+INDEX indColumn IS UNIQUE iColumn iPosition.
+
+DEFINE VARIABLE iColumn   AS INTEGER   NO-UNDO.
+DEFINE VARIABLE iPosition AS INTEGER   NO-UNDO.
+DEFINE VARIABLE iRow      AS INTEGER   NO-UNDO.
+DEFINE VARIABLE cValue    AS CHARACTER NO-UNDO.
+DEFINE VARIABLE cSection  AS CHARACTER NO-UNDO.
+DEFINE VARIABLE iScanPos  AS INTEGER   NO-UNDO.
+DEFINE VARIABLE cNumber   AS CHARACTER NO-UNDO.
    
 /* ********************  Preprocessor Definitions  ******************** */
 
@@ -79,6 +105,7 @@ DISPLAY
    lPart[2]  LABEL "Solve Part 2?"   VIEW-AS TOGGLE-BOX SKIP 
    lvlDebug  LABEL "Debug?"          VIEW-AS TOGGLE-BOX SKIP 
    lvlShow   LABEL "Show?"           VIEW-AS TOGGLE-BOX SKIP
+   lvlOutput LABEL "Output?"         VIEW-AS TOGGLE-BOX SKIP
    WITH FRAME fr-Parameters SIDE-LABELS ROW 3 CENTERED TITLE " Parameters ".
 ASSIGN 
    lDownload  = FALSE
@@ -96,6 +123,7 @@ UPDATE
    lPart
    lvlDebug
    lvlShow
+   lvlOutput
    WITH FRAME fr-Parameters.
 RUN plip_aoc.p PERSISTENT SET hPLIP.
 IF lOpenURL THEN 
@@ -137,12 +165,14 @@ COPY-LOB FROM FILE cInputfile TO OBJECT lcInput.
 IF lvlDebug THEN 
 DO:
    lcInput = "".
+   cInputFile = REPLACE (cInputFile, ".txt", "_debug.txt").
+   COPY-LOB FROM FILE cInputfile TO OBJECT lcInput.
 END.
 
 /* Read Input into Temp-table */
 ReadBlock:
 DO iLine = 1 TO NUM-ENTRIES (lcInput, "~n"):
-   cLine = TRIM (ENTRY (iLine, lcInput, "~n")).
+   cLine = RIGHT-TRIM (ENTRY (iLine, lcInput, "~n")).
 
    IF cLine EQ "" THEN 
       NEXT.
@@ -154,10 +184,14 @@ DO iLine = 1 TO NUM-ENTRIES (lcInput, "~n"):
       .
 
    iMaxLine = ttLine.IDLine.
+   iMaxLength = MAXIMUM (iMaxLength, LENGTH (ttLine.cInputLine)).
+   
 END. /* ReadBlock: */
 
 IF lvlShow THEN 
 DO:
+   MESSAGE iMaxLength
+   VIEW-AS ALERT-BOX.
    RUN sy\win\wbrowsett.w
       (INPUT TEMP-TABLE ttLine:HANDLE).
 END.
@@ -242,30 +276,141 @@ DO:
    IF lPart[1] THEN DO:
       /* Reset counters */
       iSolution = 0.
-      
-      FOR EACH ttLine:
-
-      END.
    END. /* Reset counters */
-   
-   FILE-INFO:FILE-NAME = "output".
 
-   cOutputFile = SUBSTITUTE ("&1\&2.out",
-                             FILE-INFO:FULL-PATHNAME,
-                             STRING (iDay, "99")).
+   IF lvlOutput EQ TRUE THEN DO:   
+      FILE-INFO:FILE-NAME = "output".
    
-   OUTPUT TO VALUE (cOutputFile).
-   
-   FOR EACH ttLine:
-
+      cOutputFile = SUBSTITUTE ("&1\&2.out",
+                                FILE-INFO:FULL-PATHNAME,
+                                STRING (iDay, "99")).
+      
+      OUTPUT TO VALUE (cOutputFile).
+   END.
+      
+   FIND LAST ttLine.
+   iColumn = 0.
+   DO iPosition = 1 TO LENGTH (ttLine.cInputLine):
+      cChar = SUBSTRING (ttLine.cInputLine, iPosition, 1).
+      IF INDEX ("+*", cChar) NE 0 THEN DO:
+         iColumn += 1.
+         CREATE ttProblem.
+         ASSIGN 
+            ttProblem.iColumn    = iColumn
+            ttProblem.iStartPos  = iPosition
+            ttProblem.cOperation = cChar
+         .
+         IF ttProblem.cOperation EQ "*" THEN 
+            ttProblem.iResult = 1.
+      END.
+      ELSE DO:
+         FIND  ttProblem 
+         WHERE ttProblem.iColumn EQ iColumn.
+         ASSIGN 
+            ttProblem.iEndPos = iPosition
+         .
+      END.
+      IF iPosition EQ LENGTH (ttLine.cInputLine) THEN DO:
+         MESSAGE ttProblem.iEndPos SKIP iMaxLength
+         VIEW-AS ALERT-BOX. 
+         ttProblem.iEndPos = iMaxLength.
+         MESSAGE ttProblem.iEndPos
+         VIEW-AS ALERT-BOX.
+      END.
+      ELSE DO:
+         ttProblem.iEndPos -= 1.
+      END.
    END.
 
-   OUTPUT CLOSE.
+   IF lvlShow THEN DO:
+      RUN sy\win\wbrowsett.w
+         (INPUT TEMP-TABLE ttProblem:HANDLE).
+   END.
+   
+   FOR EACH ttLine
+   WHERE ttLine.IDLine LT iMaxLine:
+      DO iPosition = 1 TO LENGTH (ttLine.cInputLine):
+         cChar = SUBSTRING (ttLine.cInputLine, iPosition, 1).
+         IF INDEX("0123456789", cChar) NE 0 THEN DO:
+            /* Found a number */
+            FIND  ttProblem
+            WHERE ttProblem.iStartPos LE iPosition
+            AND   ttProblem.iEndPos   GE iPosition.
+            CREATE ttTermColumn.
+            ASSIGN 
+               ttTermColumn.iColumn   = ttProblem.iColumn
+               ttTermColumn.iRow      = ttLine.IDLine
+               ttTermColumn.iPosition = iPosition
+               ttTermColumn.cValue    = cChar
+            .
+         END.
+      END.
+   END.
+   
+   FOR EACH ttProblem
+   BY ttProblem.iColumn DESCENDING:
+      DO iPosition = ttProblem.iEnd TO ttProblem.iStartPos BY -1:
+         CREATE ttTermByColumn.
+         ASSIGN 
+            ttTermByColumn.iColumn   = ttProblem.iColumn
+            ttTermByColumn.iPosition = iPosition
+         .
+                              
+         FOR EACH ttTermColumn OF ttProblem
+         WHERE ttTermColumn.iPosition EQ iPosition
+         BY    ttTermColumn.iRow:
+            ASSIGN 
+               ttTermByColumn.cValue += ttTermColumn.cValue
+            .
+            IF lvlDebug THEN DO:
+               MESSAGE SUBSTITUTE ("Column: &1, Position: &2, Row: &3, Value: &4, Total Value: &5.",
+                                   ttTermColumn.iColumn,
+                                   ttTermColumn.iPosition,
+                                   ttTermColumn.iRow,
+                                   ttTermColumn.cValue,
+                                   ttTermByColumn.cValue)
+               VIEW-AS ALERT-BOX.
+            END.
+         END.
+         ttTermByColumn.iValue = INT64 (ttTermByColumn.cValue).
+         IF lvlDebug THEN DO:
+            MESSAGE SUBSTITUTE ("Column: &1, Position: &2, Value: &3",
+                                ttTermByColumn.iColumn,
+                                ttTermByColumn.iPosition,
+                                ttTermByColumn.cValue)
+            VIEW-AS ALERT-BOX.
+         END.
+      END.
+      FOR EACH ttTermByColumn OF ttProblem:
+         CASE ttProblem.cOperation:
+            WHEN "*" THEN
+               ttProblem.iResult *= ttTermByColumn.iValue.
+            WHEN "+" THEN 
+               ttProblem.iResult += ttTermByColumn.iValue.
+            OTHERWISE
+               UNDO, THROW NEW Progress.Lang.AppError(SUBSTITUTE ("Unknown operation '&1'.", ttProblem.cOperation), 99).
+         END CASE. 
+      END.
+      iSolution += ttProblem.iResult.
+   END.
+   
+   IF lvlDebug THEN DO:
+      RUN sy\win\wbrowsett.w
+         (INPUT TEMP-TABLE ttProblem:HANDLE).
+      RUN sy\win\wbrowsett.w
+         (INPUT TEMP-TABLE ttTermColumn:HANDLE).
+   END.
+
+   IF lvlOutput EQ TRUE THEN DO:
+      OUTPUT CLOSE.
+   END.
       
    IF lvlShow THEN 
    DO:
       RUN sy\win\wbrowsett.w
-         (INPUT TEMP-TABLE ttLine:HANDLE).
+         (INPUT TEMP-TABLE ttProblem:HANDLE).
+      RUN sy\win\wbrowsett.w
+         (INPUT TEMP-TABLE ttTermByColumn:HANDLE).
    END.
       
    OUTPUT TO "clipboard".
