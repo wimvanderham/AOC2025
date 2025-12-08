@@ -75,11 +75,25 @@ DEFINE TEMP-TABLE ttSeen
    FIELD iCol AS INTEGER
 INDEX indSeen IS UNIQUE iRow iCol.
  
+DEFINE TEMP-TABLE ttScore
+   FIELD iRow AS INTEGER 
+   FIELD iCol AS INTEGER 
+   FIELD iValue AS INT64 
+INDEX indScore IS UNIQUE iRow iCol.
+ 
 DEFINE VARIABLE iNewID AS INTEGER NO-UNDO.   
 DEFINE VARIABLE lSplit AS LOGICAL NO-UNDO. 
 DEFINE VARIABLE iStep  AS INTEGER NO-UNDO.
    
 /* ********************  Preprocessor Definitions  ******************** */
+
+/* ************************  Function Prototypes ********************** */
+
+
+FUNCTION getScore RETURNS INT64 
+   (INPUT ipiStep AS INTEGER, 
+    INPUT ipiRow  AS INTEGER,
+    INPUT ipiCol  AS INTEGER) FORWARD.
 
 {AOC_session.i}
 
@@ -314,10 +328,6 @@ DO:
    IF lPart[1] THEN DO:
       /* Reset counters */
       iSolution = 0.
-      
-      FOR EACH ttLine:
-
-      END.
    END. /* Reset counters */
    
    IF lvlOutput EQ TRUE THEN DO:
@@ -329,11 +339,14 @@ DO:
       
       OUTPUT TO VALUE (cOutputFile).
    END.
-      
-   FOR EACH ttLine:
-
-   END.
-
+   
+   iStep = 1.   
+   FIND FIRST ttBeam 
+   WHERE ttBeam.iStep    EQ iStep
+   AND   ttBeam.lRunning EQ TRUE NO-ERROR.
+   IF AVAILABLE ttBeam THEN 
+      iSolution = getScore(ttBeam.iStep, ttBeam.iRow, ttBeam.iCol).
+   
    IF lvlOutput EQ TRUE THEN DO:
       OUTPUT CLOSE.
    END.
@@ -377,3 +390,83 @@ CATCH oError AS Progress.Lang.Error :
    END.
    RETURN.      
 END CATCH.
+
+
+/* ************************  Function Implementations ***************** */
+
+FUNCTION getScore RETURNS INT64 
+(INPUT ipiStep AS INTEGER,
+ INPUT ipiRow  AS INTEGER,
+ INPUT ipiCol  AS INTEGER):
+/*------------------------------------------------------------------------------
+ Purpose: Returns the "score" for a beam that passes this point
+ Notes:   Implemented recursively by returning
+------------------------------------------------------------------------------*/   
+DEFINE BUFFER ttGrid  FOR ttGrid.
+DEFINE BUFFER ttScore FOR ttScore.
+
+   IF lvlOutput THEN DO:
+      PUT UNFORMATTED 
+         SUBSTITUTE ("&1(&2,&3)", 
+            FILL (" ", ipiStep - 1), 
+            ipiRow, 
+            ipiCol) SKIP.
+   END.
+   
+   /* Find grid position one down from the input coordinates */
+   FIND  ttGrid
+   WHERE ttGrid.iRow EQ ipiRow + 1
+   AND   ttGrid.iCol EQ ipiCol NO-ERROR.
+   IF NOT AVAILABLE ttGrid THEN DO:
+      /* Found an exit off the Grid from this point */
+      IF lvlOutput THEN DO:
+         PUT UNFORMATTED 
+            SUBSTITUTE ("&1(&2,&3) Off Grid --> 1",
+               FILL (" ", ipiStep - 1),
+               ipiRow,
+               ipiCol) SKIP. 
+      END.
+      RETURN 1.
+   END.
+   
+   FIND  ttScore
+   WHERE ttScore.iRow EQ ipiRow
+   AND   ttScore.iCol EQ ipiCol NO-ERROR.
+   IF AVAILABLE ttScore THEN DO:
+      IF lvlOutput THEN DO:
+         PUT UNFORMATTED 
+            SUBSTITUTE ("&1(&2,&3) Already examined --> &4", 
+               FILL (" ", ipiStep - 1), 
+               ttScore.iRow, 
+               ttScore.iCol,
+               ttScore.iValue) SKIP.
+      END.
+      RETURN ttScore.iValue.
+   END.
+
+   CREATE ttScore.
+   ASSIGN 
+      ttScore.iRow = ipiRow
+      ttScore.iCol = ipiCol
+   .
+   
+   IF ttGrid.cChar EQ "^" THEN DO:
+      ttScore.iValue = getScore(ipiStep + 1, ttGrid.iRow, ttGrid.iCol - 1) + 
+         getScore(ipiStep + 1, ttGrid.iRow, ttGrid.iCol + 1).
+   END.
+   ELSE DO:
+      ttScore.iValue = getScore(ipiStep + 1, ttGrid.iRow, ttGrid.iCol).
+   END.
+       
+   IF lvlOutput THEN DO:       
+      PUT UNFORMATTED 
+         SUBSTITUTE ("&1(&2,&3) Examined --> &4", 
+            FILL (" ", ipiStep - 1),
+            ttScore.iRow,
+            ttScore.iCol,
+            ttScore.iValue) SKIP.
+   END.
+                  
+   RETURN ttScore.iValue.
+            
+END FUNCTION.
